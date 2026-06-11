@@ -302,504 +302,7 @@ relationRef.setOutOrDefault(
 
 ---
 
-# 四、BatchRef 的核心接口设计
-
-```java
-public class BatchRef<T> {
-
-    public static <T> BatchRef<T> wrap(BatchQuery<T> query) {
-        return BatchRefs.register(query);
-    }
-
-    public BatchRef<T> whenPresent(Runnable runner) {
-        // 收集步骤
-        return this;
-    }
-
-    public BatchRef<T> whenAbsent(Runnable runner) {
-        // 收集步骤
-        return this;
-    }
-
-    public <V> BatchRef<T> setOut(
-            Function<T, V> getter,
-            Consumer<V> setter
-    ) {
-        // 收集步骤
-        return this;
-    }
-
-    public <V> BatchRef<T> setOutOrDefault(
-            Function<T, V> getter,
-            Consumer<V> setter,
-            V defaultValue
-    ) {
-        // 收集步骤
-        return this;
-    }
-
-    public <V, R> BatchRef<T> setOutMapped(
-            Function<T, V> getter,
-            Function<V, R> mapper,
-            Consumer<R> setter
-    ) {
-        // 收集步骤
-        return this;
-    }
-
-    public <V> BatchRef<T> whenValue(
-            Function<T, V> getter,
-            Predicate<V> predicate,
-            Runnable runner
-    ) {
-        // 收集步骤
-        return this;
-    }
-
-    public <V> BatchRef<T> whenValue(
-            Function<T, V> getter,
-            Predicate<V> predicate,
-            Runnable trueRunner,
-            Runnable falseRunner
-    ) {
-        // 收集步骤
-        return this;
-    }
-}
-```
-
-`BatchRef` 不直接暴露实体：
-
-```java
-// 不推荐暴露
-T get();
-```
-
-如果确实要调试，可以提供：
-
-```java
-T unsafeGet();
-```
-
-但业务代码不要用。
-
----
-
-# 五、BatchQuery 是什么？
-
-`BatchQuery<T>` 是一个查询描述对象。
-
-它不是查询结果，而是描述：
-
-```text
-这个对象怎么单查
-这个对象怎么批量查
-这个对象的 key 是什么
-这个 loaderName 是什么
-```
-
-示例：
-
-```java
-public class BatchQuery<T> {
-
-    private final String loaderName;
-
-    private final Object key;
-
-    private final Function<Collection<Object>, Map<Object, T>> batchLoader;
-
-    private final Supplier<T> fallbackLoader;
-
-    // getter / constructor
-}
-```
-
----
-
-# 六、QueryService 怎么写？
-
-## 1. Relation 查询
-
-```java
-public BatchQuery<GeneralContractingProjectGroupRelation> activeRelationByWorkerProjectId(
-        Long workerProjectId
-) {
-    return BatchQuery.of(
-            "projectGcRelation.activeByWorkerProjectId",
-            workerProjectId,
-            ids -> getActiveRelationMapByWorkerProjectIds(castLongIds(ids)),
-            () -> getActiveRelationByWorkerProjectId(workerProjectId)
-    );
-}
-```
-
-普通单查：
-
-```java
-public GeneralContractingProjectGroupRelation getActiveRelationByWorkerProjectId(
-        Long workerProjectId
-) {
-    return getActiveRelationMapByWorkerProjectIds(List.of(workerProjectId))
-            .get(workerProjectId);
-}
-```
-
-批量查：
-
-```java
-public Map<Long, GeneralContractingProjectGroupRelation> getActiveRelationMapByWorkerProjectIds(
-        Collection<Long> workerProjectIds
-) {
-    if (workerProjectIds == null || workerProjectIds.isEmpty()) {
-        return Collections.emptyMap();
-    }
-
-    List<GeneralContractingProjectGroupRelation> list = relationMapper.selectList(
-            Wrappers.<GeneralContractingProjectGroupRelation>lambdaQuery()
-                    .in(
-                            GeneralContractingProjectGroupRelation::getWorkerProjectId,
-                            workerProjectIds
-                    )
-                    .eq(GeneralContractingProjectGroupRelation::getDeleted, false)
-                    .eq(GeneralContractingProjectGroupRelation::getStatus, 1)
-    );
-
-    return list.stream()
-            .collect(Collectors.toMap(
-                    GeneralContractingProjectGroupRelation::getWorkerProjectId,
-                    Function.identity(),
-                    (a, b) -> a
-            ));
-}
-```
-
----
-
-## 2. User 查询，带固定参数 userId
-
-```java
-public BatchQuery<GeneralContractingProjectUser> activeUserByWorkerProjectIdAndUserId(
-        Long workerProjectId,
-        Long userId
-) {
-    return BatchQuery.of(
-            "projectGcUser.activeByWorkerProjectIdAndUserId:userId=" + userId,
-            workerProjectId,
-            ids -> getActiveUserMapByWorkerProjectIdsAndUserId(castLongIds(ids), userId),
-            () -> getActiveUserByWorkerProjectIdAndUserId(workerProjectId, userId)
-    );
-}
-```
-
-这里 loaderName 必须带上 `userId`，因为：
-
-```text
-同一个 workerProjectId，不同 userId 查出来的结果不同
-```
-
----
-
-# 七、BatchRefs 怎么执行？
-
-核心流程：
-
-```text
-BatchRef.wrap(query)
-    ↓
-如果当前有 BatchScope：
-    把 query.key 收集到 loaderName 分组里
-    返回 BatchRef
-如果当前没有 BatchScope：
-    直接 fallback 单查
-    返回 immediate BatchRef
-
-BatchRef.setOut / whenPresent / whenValue
-    ↓
-只收集 Step，不执行
-
-BatchRefs.flush()
-    ↓
-按 loaderName 分组
-    每组执行一次 batchLoader(keys)
-    得到 Map<key, value>
-    遍历所有 BatchRef
-    取 value
-    回放它收集的所有 Step
-```
-
----
-
-# 八、BatchRefs 的伪代码
-
-```java
-public final class BatchRefs {
-
-    public static <T> BatchRef<T> register(BatchQuery<T> query) {
-        if (!BatchContextHolder.exists()) {
-            T value = query.fallbackLoader().get();
-            return BatchRef.immediate(value);
-        }
-
-        BatchContext context = BatchContextHolder.current();
-
-        BatchRef<T> ref = new BatchRef<>(query.loaderName(), query.key());
-
-        context.register(query, ref);
-
-        return ref;
-    }
-
-    public static void flush() {
-        if (!BatchContextHolder.exists()) {
-            return;
-        }
-
-        BatchContextHolder.current().flush();
-    }
-}
-```
-
----
-
-# 九、BatchContext 的执行逻辑
-
-```java
-public class BatchContext {
-
-    private final Map<String, BatchGroup> groups = new LinkedHashMap<>();
-
-    public <T> void register(BatchQuery<T> query, BatchRef<T> ref) {
-        BatchGroup group = groups.computeIfAbsent(
-                query.loaderName(),
-                name -> new BatchGroup(query)
-        );
-
-        group.add(query.key(), ref);
-    }
-
-    public void flush() {
-        for (BatchGroup group : groups.values()) {
-            group.load();
-            group.replaySteps();
-        }
-    }
-}
-```
-
----
-
-# 十、BatchGroup 的逻辑
-
-```java
-public class BatchGroup {
-
-    private final BatchQuery<?> sampleQuery;
-
-    private final Set<Object> keys = new LinkedHashSet<>();
-
-    private final List<BatchRef<?>> refs = new ArrayList<>();
-
-    private Map<Object, Object> loadedMap = new HashMap<>();
-
-    public void add(Object key, BatchRef<?> ref) {
-        keys.add(key);
-        refs.add(ref);
-    }
-
-    public void load() {
-        loadedMap = sampleQuery.batchLoader().apply(keys);
-    }
-
-    public void replaySteps() {
-        for (BatchRef<?> ref : refs) {
-            Object value = loadedMap.get(ref.key());
-            ref.replay(value);
-        }
-    }
-}
-```
-
----
-
-# 十一、BatchRef 如何收集 Step？
-
-```java
-public class BatchRef<T> {
-
-    private final String loaderName;
-
-    private final Object key;
-
-    private final List<Consumer<T>> presentSteps = new ArrayList<>();
-
-    private final List<Runnable> absentSteps = new ArrayList<>();
-
-    private T immediateValue;
-
-    private boolean immediate;
-
-    public <V> BatchRef<T> setOut(
-            Function<T, V> getter,
-            Consumer<V> setter
-    ) {
-        presentSteps.add(value -> setter.accept(getter.apply(value)));
-        return this;
-    }
-
-    public <V> BatchRef<T> setOutOrDefault(
-            Function<T, V> getter,
-            Consumer<V> setter,
-            V defaultValue
-    ) {
-        presentSteps.add(value -> setter.accept(getter.apply(value)));
-        absentSteps.add(() -> setter.accept(defaultValue));
-        return this;
-    }
-
-    public <V, R> BatchRef<T> setOutMapped(
-            Function<T, V> getter,
-            Function<V, R> mapper,
-            Consumer<R> setter
-    ) {
-        presentSteps.add(value -> {
-            V fieldValue = getter.apply(value);
-            R mappedValue = mapper.apply(fieldValue);
-            setter.accept(mappedValue);
-        });
-        return this;
-    }
-
-    public BatchRef<T> whenPresent(Runnable runner) {
-        presentSteps.add(value -> runner.run());
-        return this;
-    }
-
-    public BatchRef<T> whenAbsent(Runnable runner) {
-        absentSteps.add(runner);
-        return this;
-    }
-
-    public <V> BatchRef<T> whenValue(
-            Function<T, V> getter,
-            Predicate<V> predicate,
-            Runnable runner
-    ) {
-        presentSteps.add(value -> {
-            V fieldValue = getter.apply(value);
-            if (predicate.test(fieldValue)) {
-                runner.run();
-            }
-        });
-        return this;
-    }
-
-    public <V> BatchRef<T> whenValue(
-            Function<T, V> getter,
-            Predicate<V> predicate,
-            Runnable trueRunner,
-            Runnable falseRunner
-    ) {
-        presentSteps.add(value -> {
-            V fieldValue = getter.apply(value);
-            if (predicate.test(fieldValue)) {
-                trueRunner.run();
-            } else {
-                falseRunner.run();
-            }
-        });
-        return this;
-    }
-
-    void replay(T value) {
-        if (value == null) {
-            for (Runnable absentStep : absentSteps) {
-                absentStep.run();
-            }
-            return;
-        }
-
-        for (Consumer<T> presentStep : presentSteps) {
-            presentStep.accept(value);
-        }
-    }
-}
-```
-
-这个版本的核心就是：
-
-```text
-setOut / setOutMapped / whenValue
-只是往 presentSteps 里加动作
-whenAbsent
-只是往 absentSteps 里加动作
-flush 后 replay
-才真正执行
-```
-
----
-
-# 十二、`set` 内部 value 的用法
-
-你说的：
-
-```java
-ref.setOut(relation::getName, newRelation::setName)
-ref.set(relation::setName, "sample name")
-```
-
-可以对应成两类。
-
-## 1. 从内部对象取值，设置到外部对象
-
-```java
-ref.setOut(
-        Relation::getName,
-        vo::setRelationName
-);
-```
-
-## 2. 给内部对象设置值
-
-这个要谨慎，因为内部对象是查询出来的数据对象，不一定应该被修改。
-
-如果只是临时改内存对象，可以提供：
-
-```java
-ref.setIn(
-        Relation::setName,
-        "sample name"
-);
-```
-
-实现：
-
-```java
-public <V> BatchRef<T> setIn(
-        BiConsumer<T, V> setter,
-        V value
-) {
-    presentSteps.add(entity -> setter.accept(entity, value));
-    return this;
-}
-```
-
-使用：
-
-```java
-relationRef.setIn(
-        GeneralContractingProjectGroupRelation::setRemark,
-        "sample name"
-);
-```
-
-但我建议少用 `setIn`，因为容易让人误以为会写回数据库。
-
-更推荐只用 `setOut`，也就是把内部值设置到外部 VO。
-
----
-
-# 十三、初步使用说明
+# 四、初步使用说明
 
 ## 使用规则 1：业务方法加 `@BatchScope`
 
@@ -814,17 +317,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 
 ---
 
-## 使用规则 2：QueryService 返回 `BatchQuery<T>`
-
-```java
-projectGcRelationQueryService.activeRelationByWorkerProjectId(projectId)
-```
-
-它不是结果，只是查询描述。
-
----
-
-## 使用规则 3：用 `BatchRef.wrap(...)` 包装查询描述
+## 使用规则 2：用 `BatchRef.wrap(...)` 包装查询描述
 
 ```java
 BatchRef<Relation> relationRef =
@@ -835,7 +328,7 @@ BatchRef<Relation> relationRef =
 
 ---
 
-## 使用规则 4：业务代码只写步骤，不直接取实体
+## 使用规则 3：业务代码只写步骤，不直接取实体
 
 ```java
 relationRef.setOut(Relation::getId, vo::setRelationId);
@@ -845,7 +338,7 @@ relationRef.whenAbsent(() -> vo.setRelated(false));
 
 ---
 
-## 使用规则 5：最后统一 `BatchRefs.flush()`
+## 使用规则 4：最后统一 `BatchRefs.flush()`
 
 ```java
 BatchRefs.flush();
@@ -856,7 +349,7 @@ BatchRefs.flush();
 
 ---
 
-# 十四、实现规划
+# 五、实现规划
 
 ## 第一步：先实现最小版本
 
@@ -877,30 +370,7 @@ ref.whenValue(...)
 
 ---
 
-## 第二步：QueryService 手写 BatchQuery 方法
-
-例如：
-
-```java
-activeRelationByWorkerProjectId(...)
-activeUserByWorkerProjectIdAndUserId(...)
-latestPendingApprovalByWorkerProjectId(...)
-```
-
-每个方法都明确：
-
-```text
-loaderName
-key
-batchLoader
-fallbackLoader
-```
-
-复杂条件都封在这里。
-
----
-
-## 第三步：列表页先试点
+## 第二步：列表页先试点
 
 先选一个典型方法，比如：
 
@@ -918,7 +388,7 @@ return
 
 ---
 
-## 第四步：补充安全限制
+## 第三步：补充安全限制
 
 建议加这些限制：
 
@@ -927,13 +397,12 @@ return
 2. setIn 标注为危险方法，慎用
 3. flush 后不允许继续注册新 ref，或者注册后要求再次 flush
 4. 没有 BatchScope 时 fallback 单查
-5. loaderName 必须包含固定条件，比如 userId
-6. 支持 null 缓存，避免重复查空值
+5. 支持 null 缓存，避免重复查空值
 ```
 
 ---
 
-## 第五步：再考虑 AOP 自动 flush
+## 第四步：再考虑 AOP 自动 flush
 
 第一版手动：
 
@@ -951,7 +420,7 @@ BatchRefs.flush();
 
 ---
 
-# 十五、最终效果
+# 六、最终效果
 
 原来你写：
 
