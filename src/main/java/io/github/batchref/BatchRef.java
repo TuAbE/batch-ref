@@ -82,7 +82,12 @@ public final class BatchRef<T> {
 
     public BatchRef<T> whenPresent(Runnable runner) {
         Objects.requireNonNull(runner, "runner must not be null");
-        return addPresentStep(value -> runner.run());
+        return whenPresent(value -> runner.run());
+    }
+
+    public BatchRef<T> whenPresent(Consumer<T> consumer) {
+        Objects.requireNonNull(consumer, "consumer must not be null");
+        return addPresentStep(consumer);
     }
 
     public BatchRef<T> whenAbsent(Runnable runner) {
@@ -90,27 +95,32 @@ public final class BatchRef<T> {
         return addAbsentStep(runner);
     }
 
-    public <V> BatchRef<T> setOut(Function<T, V> getter, Consumer<V> setter) {
-        Objects.requireNonNull(getter, "getter must not be null");
+    public <V> SetOutStep<T, V> setOut(Consumer<V> setter) {
         Objects.requireNonNull(setter, "setter must not be null");
+        return new SetOutStep<>(this, setter);
+    }
+
+    public <V> BatchRef<T> setOut(Consumer<V> setter, Function<T, V> getter) {
+        Objects.requireNonNull(setter, "setter must not be null");
+        Objects.requireNonNull(getter, "getter must not be null");
         return addPresentStep(value -> setter.accept(getter.apply(value)));
     }
 
-    public <V> BatchRef<T> setOutOrDefault(Function<T, V> getter, Consumer<V> setter, V defaultValue) {
-        Objects.requireNonNull(getter, "getter must not be null");
+    public <V> BatchRef<T> setOutOrDefault(Consumer<V> setter, Function<T, V> getter, V defaultValue) {
         Objects.requireNonNull(setter, "setter must not be null");
+        Objects.requireNonNull(getter, "getter must not be null");
         addPresentStep(value -> setter.accept(getter.apply(value)));
         return addAbsentStep(() -> setter.accept(defaultValue));
     }
 
     public <V, R> BatchRef<T> setOutMapped(
+            Consumer<R> setter,
             Function<T, V> getter,
-            Function<V, R> mapper,
-            Consumer<R> setter
+            Function<V, R> mapper
     ) {
+        Objects.requireNonNull(setter, "setter must not be null");
         Objects.requireNonNull(getter, "getter must not be null");
         Objects.requireNonNull(mapper, "mapper must not be null");
-        Objects.requireNonNull(setter, "setter must not be null");
         return addPresentStep(value -> setter.accept(mapper.apply(getter.apply(value))));
     }
 
@@ -209,6 +219,29 @@ public final class BatchRef<T> {
     private void runAbsentSteps() {
         for (Runnable absentStep : absentSteps) {
             absentStep.run();
+        }
+    }
+
+    public static final class SetOutStep<T, V> {
+
+        private final BatchRef<T> ref;
+        private final Consumer<V> setter;
+
+        private SetOutStep(BatchRef<T> ref, Consumer<V> setter) {
+            this.ref = ref;
+            this.setter = setter;
+        }
+
+        public BatchRef<T> from(Function<T, V> getter) {
+            return ref.setOut(setter, getter);
+        }
+
+        public BatchRef<T> fromOrDefault(Function<T, V> getter, V defaultValue) {
+            return ref.setOutOrDefault(setter, getter, defaultValue);
+        }
+
+        public <S> BatchRef<T> fromMapped(Function<T, S> getter, Function<S, V> mapper) {
+            return ref.setOutMapped(setter, getter, mapper);
         }
     }
 }

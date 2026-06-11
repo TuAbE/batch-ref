@@ -34,20 +34,24 @@ class BatchRefTest {
                 }
         ));
 
-        ref.whenPresent(() -> holder.present = true)
-                .setOut(Row::name, value -> holder.name = value)
+        ref.whenPresent(row -> {
+                    holder.present = true;
+                    holder.rowId = row.id();
+                })
+                .setOut(value -> holder.name = value, Row::name)
                 .whenValue(Row::status, status -> status == 1, () -> holder.enabled = true);
 
         assertThat(fallbackCalls).hasValue(1);
         assertThat(batchCalls).hasValue(0);
         assertThat(holder.present).isTrue();
+        assertThat(holder.rowId).isEqualTo(1L);
         assertThat(holder.name).isEqualTo("one");
         assertThat(holder.enabled).isTrue();
         assertThat(ref.isResolved()).isTrue();
     }
 
     @Test
-    void publicApiDoesNotExposeLoadedEntity() {
+    void publicApiDoesNotExposeImmediateGetter() {
         assertThat(Arrays.stream(BatchRef.class.getMethods())
                 .filter(method -> method.getDeclaringClass() == BatchRef.class)
                 .map(Method::getName))
@@ -62,9 +66,9 @@ class BatchRefTest {
         Holder repeated = new Holder();
 
         BatchRefs.runInScope(() -> {
-            ref(1L, batchCalls).setOut(Row::name, value -> first.name = value);
-            ref(2L, batchCalls).setOut(Row::name, value -> second.name = value);
-            ref(1L, batchCalls).setOut(Row::name, value -> repeated.name = value);
+            ref(1L, batchCalls).setOut(value -> first.name = value, Row::name);
+            ref(2L, batchCalls).setOut(second::setName).from(Row::name);
+            ref(1L, batchCalls).setOut(value -> repeated.name = value, Row::name);
 
             assertThat(first.name).isNull();
             BatchRefs.flush();
@@ -88,7 +92,8 @@ class BatchRefTest {
                     keys -> Map.<Object, Row>of(),
                     () -> null
             )).whenAbsent(() -> holder.present = false)
-                    .setOutOrDefault(Row::name, value -> holder.name = value, "missing");
+                    .setOut(holder::setName)
+                    .fromOrDefault(Row::name, "missing");
 
             BatchRefs.flush();
         });
@@ -106,7 +111,7 @@ class BatchRefTest {
             return scopedRef;
         });
 
-        ref.setOut(Row::name, value -> holder.name = value);
+        ref.setOut(holder::setName).from(Row::name);
 
         assertThat(holder.name).isEqualTo("row-7");
     }
@@ -293,28 +298,26 @@ class BatchRefTest {
             project.setGcUserTypeName(null);
         });
 
-        relationRef.whenPresent(() -> project.setRelatedToGc(true));
+        relationRef.whenPresent(relation -> project.setRelatedToGc(relation.getId() != null));
 
         relationRef.setOut(
-                GeneralContractingProjectGroupRelation::getGcProjectId,
-                project::setGcProjectId
+                project::setGcProjectId,
+                GeneralContractingProjectGroupRelation::getGcProjectId
         );
 
-        relationRef.setOut(
-                GeneralContractingProjectGroupRelation::getId,
-                project::setGcRelationId
-        );
+        relationRef.setOut(project::setGcRelationId)
+                .from(GeneralContractingProjectGroupRelation::getId);
 
-        relationRef.setOutMapped(
-                GeneralContractingProjectGroupRelation::getNeedApproval,
-                Boolean.TRUE::equals,
-                project::setNeedGcApproval
-        );
+        relationRef.setOut(project::setNeedGcApproval)
+                .fromMapped(
+                        GeneralContractingProjectGroupRelation::getNeedApproval,
+                        Boolean.TRUE::equals
+                );
 
         relationRef.setOutMapped(
+                project::setGcRelationStatusName,
                 GeneralContractingProjectGroupRelation::getStatus,
-                status -> Objects.equals(status, 1) ? "正常" : "已停用",
-                project::setGcRelationStatusName
+                status -> Objects.equals(status, 1) ? "正常" : "已停用"
         );
 
         gcUserRef.whenAbsent(() -> {
@@ -324,23 +327,21 @@ class BatchRefTest {
             project.setGcUserTypeName(null);
         });
 
-        gcUserRef.whenPresent(() -> project.setJoinedGcProject(true));
+        gcUserRef.whenPresent(gcUser -> project.setJoinedGcProject(gcUser.getId() != null));
 
         gcUserRef.setOut(
-                GeneralContractingProjectUser::getId,
-                project::setGcUserId
+                project::setGcUserId,
+                GeneralContractingProjectUser::getId
         );
 
-        gcUserRef.setOut(
-                GeneralContractingProjectUser::getUserType,
-                project::setGcUserType
-        );
+        gcUserRef.setOut(project::setGcUserType)
+                .from(GeneralContractingProjectUser::getUserType);
 
-        gcUserRef.setOutMapped(
-                GeneralContractingProjectUser::getUserType,
-                BatchRefTest::toGcUserTypeName,
-                project::setGcUserTypeName
-        );
+        gcUserRef.setOut(project::setGcUserTypeName)
+                .fromMapped(
+                        GeneralContractingProjectUser::getUserType,
+                        BatchRefTest::toGcUserTypeName
+                );
     }
 
     private static String toGcUserTypeName(Integer userType) {
@@ -517,6 +518,11 @@ class BatchRefTest {
     private static final class Holder {
         private boolean present;
         private boolean enabled;
+        private Long rowId;
         private String name;
+
+        private void setName(String name) {
+            this.name = name;
+        }
     }
 }

@@ -120,8 +120,8 @@ class BatchRefAutoConfigurationTest {
                     );
 
                     relationRef.setOut(
-                            GeneralContractingProjectGroupRelation::getGcProjectId,
-                            project::setGcProjectId
+                            project::setGcProjectId,
+                            GeneralContractingProjectGroupRelation::getGcProjectId
                     );
 
                     assertThat(project.getGcProjectId()).isEqualTo(GC_HEADQUARTERS_PROJECT_ID);
@@ -215,28 +215,26 @@ class BatchRefAutoConfigurationTest {
                 project.setGcUserTypeName(null);
             });
 
-            relationRef.whenPresent(() -> project.setRelatedToGc(true));
+            relationRef.whenPresent(relation -> project.setRelatedToGc(relation.getId() != null));
 
             relationRef.setOut(
-                    GeneralContractingProjectGroupRelation::getGcProjectId,
-                    project::setGcProjectId
+                    project::setGcProjectId,
+                    GeneralContractingProjectGroupRelation::getGcProjectId
             );
 
-            relationRef.setOut(
-                    GeneralContractingProjectGroupRelation::getId,
-                    project::setGcRelationId
-            );
+            relationRef.setOut(project::setGcRelationId)
+                    .from(GeneralContractingProjectGroupRelation::getId);
 
-            relationRef.setOutMapped(
-                    GeneralContractingProjectGroupRelation::getNeedApproval,
-                    Boolean.TRUE::equals,
-                    project::setNeedGcApproval
-            );
+            relationRef.setOut(project::setNeedGcApproval)
+                    .fromMapped(
+                            GeneralContractingProjectGroupRelation::getNeedApproval,
+                            Boolean.TRUE::equals
+                    );
 
             relationRef.setOutMapped(
+                    project::setGcRelationStatusName,
                     GeneralContractingProjectGroupRelation::getStatus,
-                    status -> Objects.equals(status, 1) ? "正常" : "已停用",
-                    project::setGcRelationStatusName
+                    status -> Objects.equals(status, 1) ? "正常" : "已停用"
             );
 
             gcUserRef.whenAbsent(() -> {
@@ -246,23 +244,21 @@ class BatchRefAutoConfigurationTest {
                 project.setGcUserTypeName(null);
             });
 
-            gcUserRef.whenPresent(() -> project.setJoinedGcProject(true));
+            gcUserRef.whenPresent(gcUser -> project.setJoinedGcProject(gcUser.getId() != null));
 
             gcUserRef.setOut(
-                    GeneralContractingProjectUser::getId,
-                    project::setGcUserId
+                    project::setGcUserId,
+                    GeneralContractingProjectUser::getId
             );
 
-            gcUserRef.setOut(
-                    GeneralContractingProjectUser::getUserType,
-                    project::setGcUserType
-            );
+            gcUserRef.setOut(project::setGcUserType)
+                    .from(GeneralContractingProjectUser::getUserType);
 
-            gcUserRef.setOutMapped(
-                    GeneralContractingProjectUser::getUserType,
-                    this::toGcUserTypeName,
-                    project::setGcUserTypeName
-            );
+            gcUserRef.setOut(project::setGcUserTypeName)
+                    .fromMapped(
+                            GeneralContractingProjectUser::getUserType,
+                            this::toGcUserTypeName
+                    );
         }
 
         private String toGcUserTypeName(Integer userType) {

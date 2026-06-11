@@ -20,7 +20,7 @@ Relation relation = relationRef.get();
 而是写成：
 
 ```java
-relationRef.setOut(Relation::getName, project::setRelationName);
+relationRef.setOut(project::setRelationName, Relation::getName);
 relationRef.whenValue(Relation::getStatus, status -> status == 1, () -> ...);
 ```
 
@@ -88,30 +88,28 @@ private void fillGcInfo(
         project.setGcUserTypeName(null);
     });
 
-    relationRef.whenPresent(() -> {
-        project.setRelatedToGc(true);
+    relationRef.whenPresent(relation -> {
+        project.setRelatedToGc(relation.getId() != null);
     });
 
     relationRef.setOut(
-            GeneralContractingProjectGroupRelation::getGcProjectId,
-            project::setGcProjectId
+            project::setGcProjectId,
+            GeneralContractingProjectGroupRelation::getGcProjectId
     );
 
-    relationRef.setOut(
-            GeneralContractingProjectGroupRelation::getId,
-            project::setGcRelationId
-    );
+    relationRef.setOut(project::setGcRelationId)
+            .from(GeneralContractingProjectGroupRelation::getId);
 
-    relationRef.setOutMapped(
-            GeneralContractingProjectGroupRelation::getNeedApproval,
-            Boolean.TRUE::equals,
-            project::setNeedGcApproval
-    );
+    relationRef.setOut(project::setNeedGcApproval)
+            .fromMapped(
+                    GeneralContractingProjectGroupRelation::getNeedApproval,
+                    Boolean.TRUE::equals
+            );
 
     relationRef.setOutMapped(
+            project::setGcRelationStatusName,
             GeneralContractingProjectGroupRelation::getStatus,
-            status -> Objects.equals(status, 1) ? "正常" : "已停用",
-            project::setGcRelationStatusName
+            status -> Objects.equals(status, 1) ? "正常" : "已停用"
     );
 
     gcUserRef.whenAbsent(() -> {
@@ -121,25 +119,23 @@ private void fillGcInfo(
         project.setGcUserTypeName(null);
     });
 
-    gcUserRef.whenPresent(() -> {
-        project.setJoinedGcProject(true);
+    gcUserRef.whenPresent(gcUser -> {
+        project.setJoinedGcProject(gcUser.getId() != null);
     });
 
     gcUserRef.setOut(
-            GeneralContractingProjectUser::getId,
-            project::setGcUserId
+            project::setGcUserId,
+            GeneralContractingProjectUser::getId
     );
 
-    gcUserRef.setOut(
-            GeneralContractingProjectUser::getUserType,
-            project::setGcUserType
-    );
+    gcUserRef.setOut(project::setGcUserType)
+            .from(GeneralContractingProjectUser::getUserType);
 
-    gcUserRef.setOutMapped(
-            GeneralContractingProjectUser::getUserType,
-            this::toGcUserTypeName,
-            project::setGcUserTypeName
-    );
+    gcUserRef.setOut(project::setGcUserTypeName)
+            .fromMapped(
+                    GeneralContractingProjectUser::getUserType,
+                    this::toGcUserTypeName
+            );
 }
 ```
 
@@ -163,9 +159,10 @@ private String toGcUserTypeName(Integer userType) {
 
 ```text
 1. 没有 relationRef.get()
-2. 没有把实体对象暴露出来
-3. 所有读取属性、赋值、条件判断都通过 Function / Consumer / Predicate 输入
-4. 执行时机统一交给 `@BatchScope` AOP 自动 flush
+2. whenPresent 可以在回放时拿到真实对象
+3. setOut 优先写 setter，再写从内部对象读取哪个值
+4. 赋值和条件判断通过 Function / Consumer / Predicate 输入
+5. 执行时机统一交给 `@BatchScope` AOP 自动 flush
 ```
 
 ---
@@ -176,8 +173,8 @@ private String toGcUserTypeName(Integer userType) {
 
 ```java
 relationRef.setOut(
-        GeneralContractingProjectGroupRelation::getGcProjectId,
-        project::setGcProjectId
+        project::setGcProjectId,
+        GeneralContractingProjectGroupRelation::getGcProjectId
 );
 ```
 
@@ -194,9 +191,9 @@ project.setGcProjectId(relation.getGcProjectId())
 
 ```java
 relationRef.setOutMapped(
+        project::setGcRelationStatusName,
         GeneralContractingProjectGroupRelation::getStatus,
-        status -> Objects.equals(status, 1) ? "正常" : "已停用",
-        project::setGcRelationStatusName
+        status -> Objects.equals(status, 1) ? "正常" : "已停用"
 );
 ```
 
@@ -211,11 +208,32 @@ project.setGcRelationStatusName(statusName)
 
 ---
 
+## 2.1 流式设置输出值
+
+```java
+relationRef.setOut(project::setGcProjectId)
+        .from(GeneralContractingProjectGroupRelation::getGcProjectId);
+
+relationRef.setOut(project::setNeedGcApproval)
+        .fromMapped(
+                GeneralContractingProjectGroupRelation::getNeedApproval,
+                Boolean.TRUE::equals
+        );
+```
+
+含义：
+
+```text
+先声明写到哪里，再声明值从哪里来。
+```
+
+---
+
 ## 3. 存在时执行
 
 ```java
-relationRef.whenPresent(() -> {
-    project.setRelatedToGc(true);
+relationRef.whenPresent(relation -> {
+    project.setRelatedToGc(relation.getId() != null);
 });
 ```
 
@@ -279,11 +297,11 @@ relationRef.whenValue(
 ## 7. 没有值时给默认值
 
 ```java
-relationRef.setOutOrDefault(
-        GeneralContractingProjectGroupRelation::getName,
-        project::setGcRelationName,
-        "未关联总包"
-);
+relationRef.setOut(project::setGcRelationName)
+        .fromOrDefault(
+                GeneralContractingProjectGroupRelation::getName,
+                "未关联总包"
+        );
 ```
 
 含义：
@@ -360,8 +378,8 @@ BatchRef.wrap(userQueryService::getActiveUser, new ActiveUserQuery(projectId, us
 ## 使用规则 3：业务代码只写步骤，不直接取实体
 
 ```java
-relationRef.setOut(Relation::getId, vo::setRelationId);
-relationRef.whenPresent(() -> vo.setRelated(true));
+relationRef.setOut(vo::setRelationId, Relation::getId);
+relationRef.whenPresent(relation -> vo.setRelated(relation.getId() != null));
 relationRef.whenAbsent(() -> vo.setRelated(false));
 ```
 
@@ -461,13 +479,13 @@ BatchRef<Relation> relationRef =
                 project.getProjectId()
         );
 
-relationRef.whenPresent(() -> project.setRelatedToGc(true));
+relationRef.whenPresent(relation -> project.setRelatedToGc(relation.getId() != null));
 
 relationRef.whenAbsent(() -> project.setRelatedToGc(false));
 
 relationRef.setOut(
-        Relation::getGcProjectId,
-        project::setGcProjectId
+        project::setGcProjectId,
+        Relation::getGcProjectId
 );
 ```
 

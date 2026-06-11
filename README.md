@@ -49,12 +49,17 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
                         project.getProjectId()
                 );
 
-        relationRef.whenPresent(() -> project.setRelatedToGc(true));
+        relationRef.whenPresent(relation -> project.setRelatedToGc(relation.getId() != null));
         relationRef.whenAbsent(() -> project.setRelatedToGc(false));
         relationRef.setOut(
-                GeneralContractingProjectGroupRelation::getGcProjectId,
-                project::setGcProjectId
+                project::setGcProjectId,
+                GeneralContractingProjectGroupRelation::getGcProjectId
         );
+        relationRef.setOut(project::setNeedGcApproval)
+                .fromMapped(
+                        GeneralContractingProjectGroupRelation::getNeedApproval,
+                        Boolean.TRUE::equals
+                );
     }
 
     return projectList;
