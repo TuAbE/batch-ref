@@ -21,6 +21,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class BatchRefAutoConfigurationTest {
 
+    private static final Long BUILDING_A_WORKER_PROJECT_ID = 2024060101L;
+    private static final Long BASEMENT_WORKER_PROJECT_ID = 2024060102L;
+    private static final Long MUNICIPAL_ROAD_WORKER_PROJECT_ID = 2024060199L;
+    private static final Long APPROVER_USER_ID = 88010001L;
+    private static final Long GC_HEADQUARTERS_PROJECT_ID = 90010001L;
+    private static final Long GC_PARKING_PROJECT_ID = 90010002L;
+    private static final Long ACTIVE_RELATION_ID = 70010001L;
+    private static final Long DISABLED_RELATION_ID = 70010002L;
+    private static final Long FULL_TIME_GC_USER_ID = 66010001L;
+    private static final Long TEMPORARY_GC_USER_ID = 66010002L;
+
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(AopAutoConfiguration.class, BatchRefAutoConfiguration.class));
 
@@ -45,21 +56,36 @@ class BatchRefAutoConfigurationTest {
                     ProjectGcUserQueryService gcUserQueryService =
                             context.getBean(ProjectGcUserQueryService.class);
 
-                    List<ProjectVO> projectList = projectService.getProjectList(new ProjectListParam(20L));
+                    List<ProjectVO> projectList = projectService.getProjectList(new ProjectListParam(APPROVER_USER_ID));
 
-                    assertThat(projectList).hasSize(2);
-                    ProjectVO relatedProject = projectList.get(0);
-                    assertThat(relatedProject.getRelatedToGc()).isTrue();
-                    assertThat(relatedProject.getGcProjectId()).isEqualTo(100L);
-                    assertThat(relatedProject.getGcRelationId()).isEqualTo(200L);
-                    assertThat(relatedProject.getNeedGcApproval()).isTrue();
-                    assertThat(relatedProject.getGcRelationStatusName()).isEqualTo("正常");
-                    assertThat(relatedProject.getJoinedGcProject()).isTrue();
-                    assertThat(relatedProject.getGcUserId()).isEqualTo(300L);
-                    assertThat(relatedProject.getGcUserType()).isEqualTo(1);
-                    assertThat(relatedProject.getGcUserTypeName()).isEqualTo("正式工");
+                    assertThat(projectList).hasSize(3);
 
-                    ProjectVO unrelatedProject = projectList.get(1);
+                    ProjectVO buildingProject = projectList.get(0);
+                    assertThat(buildingProject.getProjectName()).isEqualTo("A座土建施工");
+                    assertThat(buildingProject.getRelatedToGc()).isTrue();
+                    assertThat(buildingProject.getGcProjectId()).isEqualTo(GC_HEADQUARTERS_PROJECT_ID);
+                    assertThat(buildingProject.getGcRelationId()).isEqualTo(ACTIVE_RELATION_ID);
+                    assertThat(buildingProject.getNeedGcApproval()).isTrue();
+                    assertThat(buildingProject.getGcRelationStatusName()).isEqualTo("正常");
+                    assertThat(buildingProject.getJoinedGcProject()).isTrue();
+                    assertThat(buildingProject.getGcUserId()).isEqualTo(FULL_TIME_GC_USER_ID);
+                    assertThat(buildingProject.getGcUserType()).isEqualTo(1);
+                    assertThat(buildingProject.getGcUserTypeName()).isEqualTo("正式工");
+
+                    ProjectVO basementProject = projectList.get(1);
+                    assertThat(basementProject.getProjectName()).isEqualTo("地下车库机电安装");
+                    assertThat(basementProject.getRelatedToGc()).isTrue();
+                    assertThat(basementProject.getGcProjectId()).isEqualTo(GC_PARKING_PROJECT_ID);
+                    assertThat(basementProject.getGcRelationId()).isEqualTo(DISABLED_RELATION_ID);
+                    assertThat(basementProject.getNeedGcApproval()).isFalse();
+                    assertThat(basementProject.getGcRelationStatusName()).isEqualTo("已停用");
+                    assertThat(basementProject.getJoinedGcProject()).isTrue();
+                    assertThat(basementProject.getGcUserId()).isEqualTo(TEMPORARY_GC_USER_ID);
+                    assertThat(basementProject.getGcUserType()).isEqualTo(2);
+                    assertThat(basementProject.getGcUserTypeName()).isEqualTo("临时工");
+
+                    ProjectVO unrelatedProject = projectList.get(2);
+                    assertThat(unrelatedProject.getProjectName()).isEqualTo("市政道路配套工程");
                     assertThat(unrelatedProject.getRelatedToGc()).isFalse();
                     assertThat(unrelatedProject.getGcProjectId()).isNull();
                     assertThat(unrelatedProject.getGcRelationId()).isNull();
@@ -139,7 +165,11 @@ class BatchRefAutoConfigurationTest {
         }
 
         private List<ProjectVO> queryProjectList(ProjectListParam param) {
-            return List.of(new ProjectVO(10L), new ProjectVO(404L));
+            return List.of(
+                    new ProjectVO(BUILDING_A_WORKER_PROJECT_ID, "A座土建施工"),
+                    new ProjectVO(BASEMENT_WORKER_PROJECT_ID, "地下车库机电安装"),
+                    new ProjectVO(MUNICIPAL_ROAD_WORKER_PROJECT_ID, "市政道路配套工程")
+            );
         }
 
         private void fillGcInfo(
@@ -228,7 +258,20 @@ class BatchRefAutoConfigurationTest {
         private final AtomicInteger batchCalls = new AtomicInteger();
         private final AtomicInteger fallbackCalls = new AtomicInteger();
         private final Map<Long, GeneralContractingProjectGroupRelation> relations = Map.of(
-                10L, new GeneralContractingProjectGroupRelation(100L, 200L, true, 1)
+                BUILDING_A_WORKER_PROJECT_ID,
+                new GeneralContractingProjectGroupRelation(
+                        GC_HEADQUARTERS_PROJECT_ID,
+                        ACTIVE_RELATION_ID,
+                        true,
+                        1
+                ),
+                BASEMENT_WORKER_PROJECT_ID,
+                new GeneralContractingProjectGroupRelation(
+                        GC_PARKING_PROJECT_ID,
+                        DISABLED_RELATION_ID,
+                        false,
+                        0
+                )
         );
 
         BatchQuery<GeneralContractingProjectGroupRelation> activeRelationByWorkerProjectId(Long workerProjectId) {
@@ -272,7 +315,10 @@ class BatchRefAutoConfigurationTest {
         private final AtomicInteger batchCalls = new AtomicInteger();
         private final AtomicInteger fallbackCalls = new AtomicInteger();
         private final Map<WorkerProjectUserKey, GeneralContractingProjectUser> users = Map.of(
-                new WorkerProjectUserKey(10L, 20L), new GeneralContractingProjectUser(300L, 1)
+                new WorkerProjectUserKey(BUILDING_A_WORKER_PROJECT_ID, APPROVER_USER_ID),
+                new GeneralContractingProjectUser(FULL_TIME_GC_USER_ID, 1),
+                new WorkerProjectUserKey(BASEMENT_WORKER_PROJECT_ID, APPROVER_USER_ID),
+                new GeneralContractingProjectUser(TEMPORARY_GC_USER_ID, 2)
         );
 
         BatchQuery<GeneralContractingProjectUser> activeUserByWorkerProjectIdAndUserId(Long workerProjectId, Long userId) {
@@ -372,6 +418,7 @@ class BatchRefAutoConfigurationTest {
 
     static class ProjectVO {
         private final Long projectId;
+        private final String projectName;
         private Boolean relatedToGc;
         private Long gcProjectId;
         private Long gcRelationId;
@@ -382,12 +429,17 @@ class BatchRefAutoConfigurationTest {
         private Integer gcUserType;
         private String gcUserTypeName;
 
-        ProjectVO(Long projectId) {
+        ProjectVO(Long projectId, String projectName) {
             this.projectId = projectId;
+            this.projectName = projectName;
         }
 
         private Long getProjectId() {
             return projectId;
+        }
+
+        private String getProjectName() {
+            return projectName;
         }
 
         private Boolean getRelatedToGc() {
