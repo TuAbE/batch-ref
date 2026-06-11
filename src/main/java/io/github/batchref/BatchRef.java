@@ -3,9 +3,11 @@ package io.github.batchref;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 public final class BatchRef<T> {
 
@@ -23,6 +25,24 @@ public final class BatchRef<T> {
 
     public static <T> BatchRef<T> wrap(BatchQuery<T> query) {
         return BatchRefs.register(query);
+    }
+
+    public static <T> BatchRef<T> wrap(Supplier<T> queryMethod) {
+        BatchQueryCapture.CapturedQuery<T> capturedQuery = BatchQueryCapture.capture(queryMethod);
+        if (capturedQuery.query() != null) {
+            return BatchRefs.register(capturedQuery.query());
+        }
+        return immediate(capturedQuery.immediateValue());
+    }
+
+    public static <A, T> BatchRef<T> wrap(Function<A, T> queryMethod, A arg) {
+        Objects.requireNonNull(queryMethod, "queryMethod must not be null");
+        return wrap(() -> queryMethod.apply(arg));
+    }
+
+    public static <A, B, T> BatchRef<T> wrap(BiFunction<A, B, T> queryMethod, A firstArg, B secondArg) {
+        Objects.requireNonNull(queryMethod, "queryMethod must not be null");
+        return wrap(() -> queryMethod.apply(firstArg, secondArg));
     }
 
     static <T> BatchRef<T> deferred(String loaderName, Object key) {

@@ -1,7 +1,9 @@
 package io.github.batchref;
 
 import io.github.batchref.autoconfigure.BatchRefAutoConfiguration;
+import io.github.batchref.annotation.BatchQueryMethod;
 import io.github.batchref.annotation.BatchScope;
+import io.github.batchref.spring.BatchQueryMethodAspect;
 import io.github.batchref.spring.BatchScopeAspect;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -38,6 +40,7 @@ class BatchRefAutoConfigurationTest {
     @Test
     void createsBatchScopeAspectByDefault() {
         contextRunner.run(context -> assertThat(context).hasSingleBean(BatchScopeAspect.class));
+        contextRunner.run(context -> assertThat(context).hasSingleBean(BatchQueryMethodAspect.class));
     }
 
     @Test
@@ -103,6 +106,30 @@ class BatchRefAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void annotatedQueryMethodFallsBackToSingleMethodWithoutBatchScope() {
+        contextRunner.withUserConfiguration(FinalBusinessCodeConfiguration.class)
+                .run(context -> {
+                    ProjectGcRelationQueryService relationQueryService =
+                            context.getBean(ProjectGcRelationQueryService.class);
+                    ProjectVO project = new ProjectVO(BUILDING_A_WORKER_PROJECT_ID, "A座土建施工");
+
+                    BatchRef<GeneralContractingProjectGroupRelation> relationRef = BatchRef.wrap(
+                            relationQueryService::getActiveRelationByWorkerProjectId,
+                            project.getProjectId()
+                    );
+
+                    relationRef.setOut(
+                            GeneralContractingProjectGroupRelation::getGcProjectId,
+                            project::setGcProjectId
+                    );
+
+                    assertThat(project.getGcProjectId()).isEqualTo(GC_HEADQUARTERS_PROJECT_ID);
+                    assertThat(relationQueryService.batchCalls()).hasValue(0);
+                    assertThat(relationQueryService.fallbackCalls()).hasValue(1);
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class FinalBusinessCodeConfiguration {
 
@@ -145,17 +172,15 @@ class BatchRefAutoConfigurationTest {
             for (ProjectVO project : projectList) {
                 BatchRef<GeneralContractingProjectGroupRelation> relationRef =
                         BatchRef.wrap(
-                                projectGcRelationQueryService.activeRelationByWorkerProjectId(
-                                        project.getProjectId()
-                                )
+                                projectGcRelationQueryService::getActiveRelationByWorkerProjectId,
+                                project.getProjectId()
                         );
 
                 BatchRef<GeneralContractingProjectUser> gcUserRef =
                         BatchRef.wrap(
-                                projectGcUserQueryService.activeUserByWorkerProjectIdAndUserId(
-                                        project.getProjectId(),
-                                        param.getUserId()
-                                )
+                                projectGcUserQueryService::getActiveUserByWorkerProjectIdAndUserId,
+                                project.getProjectId(),
+                                param.getUserId()
                         );
 
                 fillGcInfo(project, relationRef, gcUserRef);
@@ -274,13 +299,10 @@ class BatchRefAutoConfigurationTest {
                 )
         );
 
-        BatchQuery<GeneralContractingProjectGroupRelation> activeRelationByWorkerProjectId(Long workerProjectId) {
-            return BatchQuery.ofTyped(
-                    "relation.activeByWorkerProjectId",
-                    workerProjectId,
-                    this::getActiveRelationMapByWorkerProjectIds,
-                    () -> getActiveRelationByWorkerProjectId(workerProjectId)
-            );
+        @BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
+        public GeneralContractingProjectGroupRelation getActiveRelationByWorkerProjectId(Long workerProjectId) {
+            fallbackCalls.incrementAndGet();
+            return relations.get(workerProjectId);
         }
 
         private Map<Long, GeneralContractingProjectGroupRelation> getActiveRelationMapByWorkerProjectIds(
@@ -296,16 +318,11 @@ class BatchRefAutoConfigurationTest {
             return loaded;
         }
 
-        private GeneralContractingProjectGroupRelation getActiveRelationByWorkerProjectId(Long workerProjectId) {
-            fallbackCalls.incrementAndGet();
-            return relations.get(workerProjectId);
-        }
-
-        private AtomicInteger batchCalls() {
+        public AtomicInteger batchCalls() {
             return batchCalls;
         }
 
-        private AtomicInteger fallbackCalls() {
+        public AtomicInteger fallbackCalls() {
             return fallbackCalls;
         }
     }
@@ -314,29 +331,25 @@ class BatchRefAutoConfigurationTest {
 
         private final AtomicInteger batchCalls = new AtomicInteger();
         private final AtomicInteger fallbackCalls = new AtomicInteger();
-        private final Map<WorkerProjectUserKey, GeneralContractingProjectUser> users = Map.of(
-                new WorkerProjectUserKey(BUILDING_A_WORKER_PROJECT_ID, APPROVER_USER_ID),
+        private final Map<List<Object>, GeneralContractingProjectUser> users = Map.of(
+                queryKey(BUILDING_A_WORKER_PROJECT_ID, APPROVER_USER_ID),
                 new GeneralContractingProjectUser(FULL_TIME_GC_USER_ID, 1),
-                new WorkerProjectUserKey(BASEMENT_WORKER_PROJECT_ID, APPROVER_USER_ID),
+                queryKey(BASEMENT_WORKER_PROJECT_ID, APPROVER_USER_ID),
                 new GeneralContractingProjectUser(TEMPORARY_GC_USER_ID, 2)
         );
 
-        BatchQuery<GeneralContractingProjectUser> activeUserByWorkerProjectIdAndUserId(Long workerProjectId, Long userId) {
-            WorkerProjectUserKey queryKey = new WorkerProjectUserKey(workerProjectId, userId);
-            return BatchQuery.ofTyped(
-                    "gcUser.activeByWorkerProjectIdAndUserId",
-                    queryKey,
-                    this::getActiveUserMapByWorkerProjectIdAndUserIds,
-                    () -> getActiveUserByWorkerProjectIdAndUserId(workerProjectId, userId)
-            );
+        @BatchQueryMethod(batchMethod = "getActiveUserMapByWorkerProjectIdAndUserIds")
+        public GeneralContractingProjectUser getActiveUserByWorkerProjectIdAndUserId(Long workerProjectId, Long userId) {
+            fallbackCalls.incrementAndGet();
+            return users.get(queryKey(workerProjectId, userId));
         }
 
-        private Map<WorkerProjectUserKey, GeneralContractingProjectUser> getActiveUserMapByWorkerProjectIdAndUserIds(
-                Collection<WorkerProjectUserKey> queryKeys
+        private Map<List<Object>, GeneralContractingProjectUser> getActiveUserMapByWorkerProjectIdAndUserIds(
+                Collection<List<Object>> queryKeys
         ) {
             batchCalls.incrementAndGet();
-            Map<WorkerProjectUserKey, GeneralContractingProjectUser> loaded = new LinkedHashMap<>();
-            for (WorkerProjectUserKey queryKey : queryKeys) {
+            Map<List<Object>, GeneralContractingProjectUser> loaded = new LinkedHashMap<>();
+            for (List<Object> queryKey : queryKeys) {
                 if (users.containsKey(queryKey)) {
                     loaded.put(queryKey, users.get(queryKey));
                 }
@@ -344,16 +357,15 @@ class BatchRefAutoConfigurationTest {
             return loaded;
         }
 
-        private GeneralContractingProjectUser getActiveUserByWorkerProjectIdAndUserId(Long workerProjectId, Long userId) {
-            fallbackCalls.incrementAndGet();
-            return users.get(new WorkerProjectUserKey(workerProjectId, userId));
+        private static List<Object> queryKey(Long workerProjectId, Long userId) {
+            return List.of(workerProjectId, userId);
         }
 
-        private AtomicInteger batchCalls() {
+        public AtomicInteger batchCalls() {
             return batchCalls;
         }
 
-        private AtomicInteger fallbackCalls() {
+        public AtomicInteger fallbackCalls() {
             return fallbackCalls;
         }
     }
@@ -363,9 +375,6 @@ class BatchRefAutoConfigurationTest {
         private Long getUserId() {
             return userId;
         }
-    }
-
-    private record WorkerProjectUserKey(Long workerProjectId, Long userId) {
     }
 
     static class GeneralContractingProjectGroupRelation {

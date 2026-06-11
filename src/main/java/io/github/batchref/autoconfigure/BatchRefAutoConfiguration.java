@@ -1,6 +1,7 @@
 package io.github.batchref.autoconfigure;
 
 import io.github.batchref.BatchRef;
+import io.github.batchref.spring.BatchQueryMethodAspect;
 import io.github.batchref.spring.BatchScopeAspect;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -20,5 +21,11 @@ public class BatchRefAutoConfiguration {
     @ConditionalOnMissingBean
     public BatchScopeAspect batchScopeAspect(BatchRefProperties properties) {
         return new BatchScopeAspect(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public BatchQueryMethodAspect batchQueryMethodAspect() {
+        return new BatchQueryMethodAspect();
     }
 }

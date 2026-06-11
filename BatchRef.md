@@ -38,17 +38,15 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 
         BatchRef<GeneralContractingProjectGroupRelation> relationRef =
                 BatchRef.wrap(
-                        projectGcRelationQueryService.activeRelationByWorkerProjectId(
-                                project.getProjectId()
-                        )
+                        projectGcRelationQueryService::getActiveRelationByWorkerProjectId,
+                        project.getProjectId()
                 );
 
         BatchRef<GeneralContractingProjectUser> gcUserRef =
                 BatchRef.wrap(
-                        projectGcUserQueryService.activeUserByWorkerProjectIdAndUserId(
-                                project.getProjectId(),
-                                param.getUserId()
-                        )
+                        projectGcUserQueryService::getActiveUserByWorkerProjectIdAndUserId,
+                        project.getProjectId(),
+                        param.getUserId()
                 );
 
         fillGcInfo(project, relationRef, gcUserRef);
@@ -311,7 +309,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 }
 ```
 
-如果没加，`BatchRef.wrap(...)` 会直接走单查 fallback。
+如果没加，`BatchRef.wrap(...)` 会直接执行被 `@BatchQueryMethod` 标注的单查方法。
 
 ---
 
@@ -320,8 +318,22 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 ```java
 BatchRef<Relation> relationRef =
         BatchRef.wrap(
-                relationQueryService.activeRelationByWorkerProjectId(projectId)
+                relationQueryService::getActiveRelationByWorkerProjectId,
+                projectId
         );
+```
+
+QueryService 只保留单查方法，用注解绑定批量方法：
+
+```java
+@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
+public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
+    return getOneActiveRelation(workerProjectId);
+}
+
+private Map<Long, Relation> getActiveRelationMapByWorkerProjectIds(Collection<Long> workerProjectIds) {
+    return getActiveRelationMap(workerProjectIds);
+}
 ```
 
 ---
@@ -342,7 +354,7 @@ relationRef.whenAbsent(() -> vo.setRelated(false));
 `@BatchScope` AOP 在方法正常返回前自动执行 flush：
 
 ```text
-1. 收集所有 BatchRef 的 key，按 loaderName 分组
+1. 收集所有 BatchRef 的 key，按注解方法自动生成的 loaderName 分组
 2. 每组执行一次批量查询，拿到 Map<key, 真正的值>
 3. 遍历每个 BatchRef，用 key 取出真正的值
 4. 对每个 ref 依次判断：
@@ -426,7 +438,8 @@ if (relation != null) {
 ```java
 BatchRef<Relation> relationRef =
         BatchRef.wrap(
-                relationQueryService.activeRelationByWorkerProjectId(project.getProjectId())
+                relationQueryService::getActiveRelationByWorkerProjectId,
+                project.getProjectId()
         );
 
 relationRef.whenPresent(() -> project.setRelatedToGc(true));

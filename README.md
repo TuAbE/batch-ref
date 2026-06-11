@@ -1,6 +1,6 @@
 # BatchRef Spring Boot Starter
 
-BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope` 自动 flush 时按 `loaderName` 合并成批量查询，再把 `setOut`、`whenPresent`、`whenAbsent`、`whenValue` 等步骤回放到业务对象上。
+BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope` 自动 flush 时按查询方法合并成批量查询，再把 `setOut`、`whenPresent`、`whenAbsent`、`whenValue` 等步骤回放到业务对象上。
 
 完整设计稿保留在 [BatchRef.md](BatchRef.md)，业务使用方式以其中示例为准，本实现不改变文档里的调用方式。
 
@@ -8,7 +8,6 @@ BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope`
 
 - Java 17
 - Spring Boot 3.5.x
-- MyBatis Plus ORM 项目可使用 `io.github.batchref.mybatis.MybatisPlusBatchQueries` 辅助创建 `BatchQuery`
 
 ## 引入
 
@@ -22,7 +21,7 @@ BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope`
 
 ## Spring Boot 自动装配
 
-starter 通过 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 自动装配 `BatchScopeAspect`。
+starter 通过 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 自动装配 `BatchScopeAspect` 和 `BatchQueryMethodAspect`。
 
 可配置项：
 
@@ -46,7 +45,8 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
     for (ProjectVO project : projectList) {
         BatchRef<GeneralContractingProjectGroupRelation> relationRef =
                 BatchRef.wrap(
-                        projectGcRelationQueryService.activeRelationByWorkerProjectId(project.getProjectId())
+                        projectGcRelationQueryService::getActiveRelationByWorkerProjectId,
+                        project.getProjectId()
                 );
 
         relationRef.whenPresent(() -> project.setRelatedToGc(true));
@@ -61,32 +61,23 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 }
 ```
 
-没有 `@BatchScope` 时，`BatchRef.wrap(...)` 会直接调用 `fallbackLoader` 单查，并在后续登记步骤时立即执行对应动作。
+没有 `@BatchScope` 时，`BatchRef.wrap(...)` 会直接执行被 `@BatchQueryMethod` 标注的单查方法，并在后续登记步骤时立即执行对应动作。
 
 ## QueryService
 
-文档里的写法保持可用：
+QueryService 只保留单查方法。批量方法通过注解绑定，loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
 
 ```java
-public BatchQuery<Relation> activeRelationByWorkerProjectId(Long workerProjectId) {
-    return BatchQuery.of(
-            "relation.activeByWorkerProjectId",
-            workerProjectId,
-            ids -> getActiveRelationMapByWorkerProjectIds(BatchKeys.cast(ids, Long.class)),
-            () -> getActiveRelationByWorkerProjectId(workerProjectId)
-    );
+@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
+public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
+    return relationMapper.selectActiveByWorkerProjectId(workerProjectId);
 }
-```
 
-也可以用泛型辅助方法减少强转：
-
-```java
-return BatchQuery.ofTyped(
-        "relation.activeByWorkerProjectId",
-        workerProjectId,
-        this::getActiveRelationMapByWorkerProjectIds,
-        () -> getActiveRelationByWorkerProjectId(workerProjectId)
-);
+private Map<Long, Relation> getActiveRelationMapByWorkerProjectIds(Collection<Long> workerProjectIds) {
+    return relationMapper.selectActiveByWorkerProjectIds(workerProjectIds)
+            .stream()
+            .collect(Collectors.toMap(Relation::getWorkerProjectId, Function.identity()));
+}
 ```
 
 MyBatis Plus 示例见 [docs/mybatis-plus.md](docs/mybatis-plus.md)。
