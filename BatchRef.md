@@ -6,9 +6,9 @@
 1. 业务代码里写 ref.setOut / ref.whenPresent / ref.whenValue
 2. 这些方法不马上取值、不马上执行
 3. 只是把“以后要做的动作”收集起来
-4. 最后 BatchRefs.flush()
-5. 统一批量查询
-6. 查询完成后，按顺序回放所有动作
+4. @BatchScope 方法结束时，AOP 外层自动统一批量查询
+5. 查询完成后，按顺序回放所有动作
+6. 回放时拿到真正的值，对每个 ref 依次判断 whenPresent / whenAbsent / whenValue / setOut
 ```
 
 这样业务代码就不会直接：
@@ -54,8 +54,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
         fillGcInfo(project, relationRef, gcUserRef);
     }
 
-    BatchRefs.flush();
-
+    // @BatchScope AOP 在方法返回前自动 flush，无需手动调用
     return projectList;
 }
 ```
@@ -169,7 +168,7 @@ private String toGcUserTypeName(Integer userType) {
 1. 没有 relationRef.get()
 2. 没有把实体对象暴露出来
 3. 所有读取属性、赋值、条件判断都通过 Function / Consumer / Predicate 输入
-4. 执行时机统一交给 BatchRefs.flush()
+4. 执行时机统一交给 `@BatchScope` AOP 自动 flush
 ```
 
 ---
@@ -338,14 +337,19 @@ relationRef.whenAbsent(() -> vo.setRelated(false));
 
 ---
 
-## 使用规则 4：最后统一 `BatchRefs.flush()`
+## 使用规则 4：`@BatchScope` 自动 flush，拿到值后回放步骤
 
-```java
-BatchRefs.flush();
+业务代码不需要手动调用 `BatchRefs.flush()`。
+`@BatchScope` AOP 在方法返回前自动执行 flush：
+
+```text
+1. 收集所有 BatchRef 的 key，按 loaderName 分组
+2. 每组执行一次批量查询，拿到 Map<key, 真正的值>
+3. 遍历每个 BatchRef，用 key 取出真正的值
+4. 对每个 ref 依次判断：
+   - 值存在 → 回放 whenPresent / setOut / setOutMapped / whenValue
+   - 值不存在 → 回放 whenAbsent / setOutOrDefault 的默认值
 ```
-
-如果不想手动写，可以后续让 AOP 在方法结束前自动 flush。
-但第一版建议手动写，语义清楚。
 
 ---
 
@@ -356,8 +360,9 @@ BatchRefs.flush();
 只支持：
 
 ```java
+@BatchScope  // AOP 自动 flush
+
 BatchRef.wrap(...)
-BatchRefs.flush()
 
 ref.whenPresent(...)
 ref.whenAbsent(...)
@@ -381,9 +386,9 @@ getProjectList(ProjectListParam param)
 改成：
 
 ```text
+方法加 @BatchScope
 for 循环里 wrap ref + 收集 step
-BatchRefs.flush()
-return
+return（AOP 自动 flush）
 ```
 
 ---
@@ -399,24 +404,6 @@ return
 4. 没有 BatchScope 时 fallback 单查
 5. 支持 null 缓存，避免重复查空值
 ```
-
----
-
-## 第四步：再考虑 AOP 自动 flush
-
-第一版手动：
-
-```java
-BatchRefs.flush();
-```
-
-第二版可以在 `@BatchScope` 的 AOP finally 里：
-
-```text
-如果还有未 flush 的 ref，自动 flush
-```
-
-但我建议仍然保留显式 `BatchRefs.flush()`，因为业务更清楚。
 
 ---
 
@@ -453,19 +440,15 @@ relationRef.setOut(
 );
 ```
 
-然后最后：
-
-```java
-BatchRefs.flush();
-```
-
-它就会：
+`@BatchScope` AOP 在方法返回前自动 flush，它会：
 
 ```text
 统一收集所有 projectId
 一次批量查询 relationMap
-按每个 ref 的 key 找 value
-回放 whenPresent / whenAbsent / setOut / whenValue
+按每个 ref 的 key 找到真正的值
+对每个 ref：
+  值存在 → 回放 whenPresent / setOut / whenValue
+  值不存在 → 回放 whenAbsent / setOutOrDefault 的默认值
 ```
 
 一句话：
