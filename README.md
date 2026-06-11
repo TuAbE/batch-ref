@@ -65,10 +65,10 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 
 ## QueryService
 
-QueryService 只保留单查方法。常规命名下 `@BatchQueryMethod` 不需要填批量方法名，框架会根据单查方法名自动查找批量方法：`getXxxByYyyId` 对应 `getXxxMapByYyyIds`。loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
+QueryService 只保留单查方法。`@BatchQueryMethod.batchMethod` 显式绑定批量方法名，属性上带有 IntelliJ Java 语言注入辅助；loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
 
 ```java
-@BatchQueryMethod
+@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
 public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
     return relationMapper.selectActiveByWorkerProjectId(workerProjectId);
 }

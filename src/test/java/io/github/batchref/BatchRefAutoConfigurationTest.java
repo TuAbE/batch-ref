@@ -299,7 +299,7 @@ class BatchRefAutoConfigurationTest {
                 )
         );
 
-        @BatchQueryMethod
+        @BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
         public GeneralContractingProjectGroupRelation getActiveRelationByWorkerProjectId(Long workerProjectId) {
             fallbackCalls.incrementAndGet();
             return relations.get(workerProjectId);
@@ -338,7 +338,7 @@ class BatchRefAutoConfigurationTest {
                 new GeneralContractingProjectUser(TEMPORARY_GC_USER_ID, 2)
         );
 
-        @BatchQueryMethod
+        @BatchQueryMethod(batchMethod = "getActiveUserMapByWorkerProjectIdAndUserIds")
         public GeneralContractingProjectUser getActiveUserByWorkerProjectIdAndUserId(Long workerProjectId, Long userId) {
             fallbackCalls.incrementAndGet();
             return users.get(queryKey(workerProjectId, userId));

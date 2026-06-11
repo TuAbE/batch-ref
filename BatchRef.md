@@ -323,10 +323,10 @@ BatchRef<Relation> relationRef =
         );
 ```
 
-QueryService 只保留单查方法。常规命名下 `@BatchQueryMethod` 不需要填批量方法名，框架会按 `getXxxByYyyId` → `getXxxMapByYyyIds` 的约定自动查找批量方法：
+QueryService 只保留单查方法。`@BatchQueryMethod.batchMethod` 显式绑定批量方法名，属性上带有 IntelliJ Java 语言注入辅助：
 
 ```java
-@BatchQueryMethod
+@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
 public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
     return getOneActiveRelation(workerProjectId);
 }
