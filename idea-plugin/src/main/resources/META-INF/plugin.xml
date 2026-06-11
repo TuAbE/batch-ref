@@ -4,7 +4,7 @@
     <vendor email="support@example.com">BatchRef</vendor>
 
     <description><![CDATA[
-        Adds completion, navigation, and rename support for @BatchQueryMethod method-name strings.
+        Adds completion, navigation, rename, unresolved highlighting, and implicit usage support for @BatchQueryMethod method-name strings.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -12,5 +12,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <psi.referenceContributor language="JAVA" implementation="io.github.batchref.idea.BatchQueryMethodReferenceContributor"/>
+        <annotator language="JAVA" implementationClass="io.github.batchref.idea.BatchQueryMethodAnnotator"/>
+        <implicitUsageProvider implementation="io.github.batchref.idea.BatchQueryMethodImplicitUsageProvider"/>
     </extensions>
 </idea-plugin>

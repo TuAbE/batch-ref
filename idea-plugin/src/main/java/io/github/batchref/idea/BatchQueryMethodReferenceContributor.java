@@ -26,8 +26,8 @@ public final class BatchQueryMethodReferenceContributor extends PsiReferenceCont
                             return PsiReference.EMPTY_ARRAY;
                         }
 
-                        BatchQueryMethodReference.Context referenceContext =
-                                BatchQueryMethodReference.contextOf(literalExpression);
+                        BatchQueryMethodSupport.Context referenceContext =
+                                BatchQueryMethodSupport.contextOf(literalExpression);
                         if (referenceContext == null) {
                             return PsiReference.EMPTY_ARRAY;
                         }
