@@ -1,12 +1,13 @@
 package io.github.batchref;
 
-import io.github.batchref.function.QuadFunction;
+import io.github.batchref.function.BatchBiFunction;
+import io.github.batchref.function.BatchFunction;
 import io.github.batchref.function.TriFunction;
+import io.github.batchref.function.QuadFunction;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -35,17 +36,30 @@ public final class BatchRef<T> {
         if (capturedQuery.query() != null) {
             return BatchRefs.register(capturedQuery.query());
         }
+        if (BatchRefs.isActive()) {
+            throw new BatchRefException(
+                    "BatchRef.wrap(...) was called inside @BatchScope, but no BatchQuery was captured. "
+                            + "Use a direct @BatchQueryMethod method reference such as service::queryMethod, "
+                            + "or pass BatchQuery.of(...) explicitly."
+            );
+        }
         return immediate(capturedQuery.immediateValue());
     }
 
-    public static <A, T> BatchRef<T> wrap(Function<A, T> queryMethod, A arg) {
+    public static <A, T> BatchRef<T> wrap(BatchFunction<A, T> queryMethod, A arg) {
         Objects.requireNonNull(queryMethod, "queryMethod must not be null");
-        return wrap(() -> queryMethod.apply(arg));
+        if (!BatchRefs.isActive()) {
+            return immediate(queryMethod.apply(arg));
+        }
+        return registerMethodReference(queryMethod, new Object[]{arg});
     }
 
-    public static <A, B, T> BatchRef<T> wrap(BiFunction<A, B, T> queryMethod, A firstArg, B secondArg) {
+    public static <A, B, T> BatchRef<T> wrap(BatchBiFunction<A, B, T> queryMethod, A firstArg, B secondArg) {
         Objects.requireNonNull(queryMethod, "queryMethod must not be null");
-        return wrap(() -> queryMethod.apply(firstArg, secondArg));
+        if (!BatchRefs.isActive()) {
+            return immediate(queryMethod.apply(firstArg, secondArg));
+        }
+        return registerMethodReference(queryMethod, new Object[]{firstArg, secondArg});
     }
 
     public static <A, B, C, T> BatchRef<T> wrap(
@@ -55,7 +69,10 @@ public final class BatchRef<T> {
             C thirdArg
     ) {
         Objects.requireNonNull(queryMethod, "queryMethod must not be null");
-        return wrap(() -> queryMethod.apply(firstArg, secondArg, thirdArg));
+        if (!BatchRefs.isActive()) {
+            return immediate(queryMethod.apply(firstArg, secondArg, thirdArg));
+        }
+        return registerMethodReference(queryMethod, new Object[]{firstArg, secondArg, thirdArg});
     }
 
     public static <A, B, C, D, T> BatchRef<T> wrap(
@@ -66,7 +83,16 @@ public final class BatchRef<T> {
             D fourthArg
     ) {
         Objects.requireNonNull(queryMethod, "queryMethod must not be null");
-        return wrap(() -> queryMethod.apply(firstArg, secondArg, thirdArg, fourthArg));
+        if (!BatchRefs.isActive()) {
+            return immediate(queryMethod.apply(firstArg, secondArg, thirdArg, fourthArg));
+        }
+        return registerMethodReference(queryMethod, new Object[]{firstArg, secondArg, thirdArg, fourthArg});
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> BatchRef<T> registerMethodReference(Object queryMethod, Object[] args) {
+        BatchQuery<T> query = (BatchQuery<T>) BatchQueryMethodQueries.createFromMethodReference(queryMethod, args);
+        return BatchRefs.register(query);
     }
 
     static <T> BatchRef<T> deferred(String loaderName, Object key) {

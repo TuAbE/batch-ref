@@ -1,5 +1,6 @@
 package io.github.batchref;
 
+import io.github.batchref.annotation.BatchQueryMethod;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -114,6 +115,30 @@ class BatchRefTest {
         ref.setOut(holder::setName).from(Row::name);
 
         assertThat(holder.name).isEqualTo("row-7");
+    }
+
+    @Test
+    void annotatedMethodReferenceRegistersBatchQueryWithoutAopProxy() {
+        DirectRowQueries queries = new DirectRowQueries();
+        Holder first = new Holder();
+        Holder second = new Holder();
+
+        BatchRefs.runInScope(() -> {
+            BatchRef.wrap(queries::rowById, 1L)
+                    .setOut(first::setName)
+                    .from(Row::name);
+            BatchRef.wrap(queries::rowById, 2L)
+                    .setOut(second::setName)
+                    .from(Row::name);
+
+            assertThat(queries.fallbackCalls).hasValue(0);
+            assertThat(queries.batchCalls).hasValue(0);
+        });
+
+        assertThat(first.name).isEqualTo("row-1");
+        assertThat(second.name).isEqualTo("row-2");
+        assertThat(queries.fallbackCalls).hasValue(0);
+        assertThat(queries.batchCalls).hasValue(1);
     }
 
     @Test
@@ -357,6 +382,27 @@ class BatchRefTest {
     }
 
     private record Row(Long id, String name, Integer status) {
+    }
+
+    private static final class DirectRowQueries {
+
+        private final AtomicInteger fallbackCalls = new AtomicInteger();
+        private final AtomicInteger batchCalls = new AtomicInteger();
+
+        @BatchQueryMethod(batchMethod = "rowsByIds")
+        private Row rowById(Long id) {
+            fallbackCalls.incrementAndGet();
+            return new Row(id, "fallback-" + id, 1);
+        }
+
+        private Map<Long, Row> rowsByIds(Collection<Long> ids) {
+            batchCalls.incrementAndGet();
+            Map<Long, Row> rows = new LinkedHashMap<>();
+            for (Long id : ids) {
+                rows.put(id, new Row(id, "row-" + id, 1));
+            }
+            return rows;
+        }
     }
 
     private record ProjectListParam(Long userId) {

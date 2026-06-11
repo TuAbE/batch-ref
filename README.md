@@ -110,6 +110,7 @@ BatchRef.wrap(gcUserQueries::getActiveUser, new ActiveUserQuery(project.getProje
 - 批量方法必须只有一个 `Collection` 参数，并返回 `Map`。
 - `loaderName`、key 和 fallback 不需要手写，框架会根据类名、方法签名和入参自动生成。
 - `@BatchScope` 方法正常返回前会自动 flush；不要在业务代码里手动调用 `BatchRefs.flush()`。
+- `@BatchScope` 内使用 `BatchRef.wrap(service::method, args...)` 这种直接方法引用；不要写成 `BatchRef.wrap(() -> service.method(arg))`。
 - `BatchRef` 不提供 `get()`；需要写值用 `setOut(...)`，需要读取真实对象用 `whenPresent(value -> ...)`。
 
 MyBatis Plus 示例见 [docs/mybatis-plus.md](docs/mybatis-plus.md)。

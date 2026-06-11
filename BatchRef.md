@@ -328,6 +328,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 ```
 
 如果没加，`BatchRef.wrap(...)` 会直接执行被 `@BatchQueryMethod` 标注的单查方法。
+在 `@BatchScope` 内请使用 `BatchRef.wrap(service::method, args...)` 这种直接方法引用，框架会从方法引用解析 `@BatchQueryMethod` 并登记批量查询；不要写成 `BatchRef.wrap(() -> service.method(arg))`。
 
 ---
 
