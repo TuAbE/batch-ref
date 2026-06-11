@@ -54,7 +54,6 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
         fillGcInfo(project, relationRef, gcUserRef);
     }
 
-    // @BatchScope AOP 在方法返回前自动 flush，无需手动调用
     return projectList;
 }
 ```
@@ -340,7 +339,7 @@ relationRef.whenAbsent(() -> vo.setRelated(false));
 ## 使用规则 4：`@BatchScope` 自动 flush，拿到值后回放步骤
 
 业务代码不需要手动调用 `BatchRefs.flush()`。
-`@BatchScope` AOP 在方法返回前自动执行 flush：
+`@BatchScope` AOP 在方法正常返回前自动执行 flush：
 
 ```text
 1. 收集所有 BatchRef 的 key，按 loaderName 分组
@@ -399,7 +398,7 @@ return（AOP 自动 flush）
 
 ```text
 1. BatchRef 不暴露 get()
-2. setIn 标注为危险方法，慎用
+2. BatchRef 不提供 setIn 这类直接操作内部实体的方法
 3. flush 后不允许继续注册新 ref，或者注册后要求再次 flush
 4. 没有 BatchScope 时 fallback 单查
 5. 支持 null 缓存，避免重复查空值

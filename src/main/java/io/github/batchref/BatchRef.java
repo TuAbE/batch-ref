@@ -3,7 +3,6 @@ package io.github.batchref;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -105,21 +104,6 @@ public final class BatchRef<T> {
                 falseRunner.run();
             }
         });
-    }
-
-    /**
-     * Mutates the loaded object in memory only. It does not persist anything back to the database.
-     */
-    public <V> BatchRef<T> setIn(BiConsumer<T, V> setter, V value) {
-        Objects.requireNonNull(setter, "setter must not be null");
-        return addPresentStep(entity -> setter.accept(entity, value));
-    }
-
-    public T unsafeGet() {
-        if (!resolved) {
-            throw new BatchRefException("BatchRef has not been resolved yet. Call BatchRefs.flush() first.");
-        }
-        return resolvedValue;
     }
 
     public boolean isResolved() {

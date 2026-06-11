@@ -1,6 +1,6 @@
 # BatchRef Spring Boot Starter
 
-BatchRef 用于把循环里的单个查询描述收集起来，在 `BatchRefs.flush()` 时按 `loaderName` 合并成批量查询，再把 `setOut`、`whenPresent`、`whenAbsent`、`whenValue` 等步骤回放到业务对象上。
+BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope` 自动 flush 时按 `loaderName` 合并成批量查询，再把 `setOut`、`whenPresent`、`whenAbsent`、`whenValue` 等步骤回放到业务对象上。
 
 完整设计稿保留在 [BatchRef.md](BatchRef.md)，业务使用方式以其中示例为准，本实现不改变文档里的调用方式。
 
@@ -34,7 +34,7 @@ batch-ref:
   aspect-order: 2147483547
 ```
 
-`auto-flush=true` 时，`@BatchScope` 方法正常返回前会自动补一次 `BatchRefs.flush()`。业务代码仍然可以按设计稿显式调用 `BatchRefs.flush()`；如果已经手动 flush，自动 flush 会是空操作。
+`auto-flush=true` 时，`@BatchScope` 方法正常返回前会自动 flush。业务代码只登记填充步骤，不需要手动调用 `BatchRefs.flush()`。
 
 ## 业务代码
 
@@ -57,7 +57,6 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
         );
     }
 
-    BatchRefs.flush();
     return projectList;
 }
 ```
