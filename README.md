@@ -15,7 +15,7 @@ BatchRef 用于把循环里的单个查询描述收集起来，在 `@BatchScope`
 <dependency>
     <groupId>io.github.batchref</groupId>
     <artifactId>batch-ref-spring-boot-starter</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.5-SNAPSHOT</version>
 </dependency>
 ```
 
