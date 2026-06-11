@@ -142,6 +142,71 @@ class BatchRefTest {
     }
 
     @Test
+    void nestedWhenCallbacksCanRegisterBatchRefsForNextFlushWave() {
+        AtomicInteger parentBatchCalls = new AtomicInteger();
+        AtomicInteger presentChildBatchCalls = new AtomicInteger();
+        AtomicInteger absentChildBatchCalls = new AtomicInteger();
+        AtomicInteger valueChildBatchCalls = new AtomicInteger();
+        Holder presentChild = new Holder();
+        Holder absentChild = new Holder();
+        Holder valueChild = new Holder();
+
+        BatchRefs.runInScope(() -> {
+            BatchRef.wrap(rowQuery(
+                    "nested.parent.present",
+                    1L,
+                    Map.of(1L, new Row(1L, "parent-present", 1)),
+                    parentBatchCalls
+            )).whenPresent(parent -> BatchRef.wrap(rowQuery(
+                    "nested.child.present",
+                    parent.id() + 10,
+                    Map.of(11L, new Row(11L, "present-child", 1)),
+                    presentChildBatchCalls
+            )).setOut(presentChild::setName).from(Row::name));
+
+            BatchRef.wrap(rowQuery(
+                    "nested.parent.absent",
+                    2L,
+                    Map.of(),
+                    parentBatchCalls
+            )).whenAbsent(() -> BatchRef.wrap(rowQuery(
+                    "nested.child.absent",
+                    22L,
+                    Map.of(22L, new Row(22L, "absent-child", 1)),
+                    absentChildBatchCalls
+            )).setOut(absentChild::setName).from(Row::name));
+
+            BatchRef.wrap(rowQuery(
+                    "nested.parent.value",
+                    3L,
+                    Map.of(3L, new Row(3L, "parent-value", 1)),
+                    parentBatchCalls
+            )).whenValue(
+                    Row::status,
+                    status -> status == 1,
+                    () -> BatchRef.wrap(rowQuery(
+                            "nested.child.value",
+                            33L,
+                            Map.of(33L, new Row(33L, "value-child", 1)),
+                            valueChildBatchCalls
+                    )).setOut(valueChild::setName).from(Row::name)
+            );
+
+            assertThat(presentChild.name).isNull();
+            assertThat(absentChild.name).isNull();
+            assertThat(valueChild.name).isNull();
+        });
+
+        assertThat(presentChild.name).isEqualTo("present-child");
+        assertThat(absentChild.name).isEqualTo("absent-child");
+        assertThat(valueChild.name).isEqualTo("value-child");
+        assertThat(parentBatchCalls).hasValue(3);
+        assertThat(presentChildBatchCalls).hasValue(1);
+        assertThat(absentChildBatchCalls).hasValue(1);
+        assertThat(valueChildBatchCalls).hasValue(1);
+    }
+
+    @Test
     void fillGcInfoRegistersStepsAndAutoFlushReplaysThemWithoutExposingEntity() {
         AtomicInteger relationBatchCalls = new AtomicInteger();
         AtomicInteger relationFallbackCalls = new AtomicInteger();
@@ -239,6 +304,29 @@ class BatchRefTest {
                 },
                 () -> new Row(id, "fallback-" + id, 1)
         ));
+    }
+
+    private static BatchQuery<Row> rowQuery(
+            String loaderName,
+            Long id,
+            Map<Long, Row> values,
+            AtomicInteger batchCalls
+    ) {
+        return BatchQuery.ofTyped(
+                loaderName,
+                id,
+                keys -> {
+                    batchCalls.incrementAndGet();
+                    Map<Long, Row> rows = new LinkedHashMap<>();
+                    for (Long key : keys) {
+                        if (values.containsKey(key)) {
+                            rows.put(key, values.get(key));
+                        }
+                    }
+                    return rows;
+                },
+                () -> values.get(id)
+        );
     }
 
     private static Map<Object, Row> rows(Collection<Object> keys) {
