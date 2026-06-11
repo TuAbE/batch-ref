@@ -45,7 +45,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
     for (ProjectVO project : projectList) {
         BatchRef<GeneralContractingProjectGroupRelation> relationRef =
                 BatchRef.wrap(
-                        projectGcRelationQueryService::getActiveRelationByWorkerProjectId,
+                        relationQueries::getActiveRelationByWorkerProjectId,
                         project.getProjectId()
                 );
 
@@ -66,11 +66,11 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 }
 ```
 
-没有 `@BatchScope` 时，`BatchRef.wrap(...)` 会直接执行被 `@BatchQueryMethod` 标注的单查方法，并在后续登记步骤时立即执行对应动作。
+没有 `@BatchScope` 时，`BatchRef.wrap(...)` 会直接执行被 `@BatchQueryMethod` 标注的方法，并在后续登记步骤时立即执行对应动作。
 
-## QueryService
+## 方法绑定示例
 
-QueryService 只保留单查方法。`@BatchQueryMethod.batchMethod` 显式绑定批量方法名，IDEA 插件提供当前类批量方法补全、跳转、重命名、错误标红和隐式引用识别；starter 内置注解处理器会在编译期校验方法名和批量方法签名，写错会直接终止编译。loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
+`@BatchQueryMethod.batchMethod` 填当前类里的批量方法名。
 
 ```java
 @BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
@@ -85,23 +85,31 @@ private Map<Long, Relation> getActiveRelationMapByWorkerProjectIds(Collection<Lo
 }
 ```
 
-多参数查询可以继续使用强类型方法引用：
+多参数调用继续使用强类型方法引用：
 
 ```java
 BatchRef.wrap(
-        projectGcUserQueryService::getActiveUserByWorkerProjectIdAndUserId,
+        gcUserQueries::getActiveUserByWorkerProjectIdAndUserId,
         project.getProjectId(),
         param.getUserId()
 );
 ```
 
-如果希望在 key 上保留参数名，推荐把多个参数收成一个 record：
+如果希望在 key 上保留参数名，可以把多个参数收成一个 record：
 
 ```java
 record ActiveUserQuery(Long workerProjectId, Long userId) {
 }
 
-BatchRef.wrap(projectGcUserQueryService::getActiveUser, new ActiveUserQuery(project.getProjectId(), param.getUserId()));
+BatchRef.wrap(gcUserQueries::getActiveUser, new ActiveUserQuery(project.getProjectId(), param.getUserId()));
 ```
+
+## 注意事项
+
+- `batchMethod` 写错会在 IDEA 插件里标红，也会在编译期由注解处理器报错并终止编译。
+- 批量方法必须只有一个 `Collection` 参数，并返回 `Map`。
+- `loaderName`、key 和 fallback 不需要手写，框架会根据类名、方法签名和入参自动生成。
+- `@BatchScope` 方法正常返回前会自动 flush；不要在业务代码里手动调用 `BatchRefs.flush()`。
+- `BatchRef` 不提供 `get()`；需要写值用 `setOut(...)`，需要读取真实对象用 `whenPresent(value -> ...)`。
 
 MyBatis Plus 示例见 [docs/mybatis-plus.md](docs/mybatis-plus.md)。
