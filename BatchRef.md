@@ -323,10 +323,10 @@ BatchRef<Relation> relationRef =
         );
 ```
 
-QueryService 只保留单查方法，用注解绑定批量方法：
+QueryService 只保留单查方法。常规命名下 `@BatchQueryMethod` 不需要填批量方法名，框架会按 `getXxxByYyyId` → `getXxxMapByYyyIds` 的约定自动查找批量方法：
 
 ```java
-@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
+@BatchQueryMethod
 public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
     return getOneActiveRelation(workerProjectId);
 }
@@ -334,6 +334,25 @@ public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
 private Map<Long, Relation> getActiveRelationMapByWorkerProjectIds(Collection<Long> workerProjectIds) {
     return getActiveRelationMap(workerProjectIds);
 }
+```
+
+多参数查询继续使用强类型方法引用，不建议把主 API 做成 `Object...`：
+
+```java
+BatchRef.wrap(
+        userQueryService::getActiveUserByWorkerProjectIdAndUserId,
+        projectId,
+        userId
+);
+```
+
+如果需要保留入参名字，推荐把多参数收成一个 record：
+
+```java
+record ActiveUserQuery(Long workerProjectId, Long userId) {
+}
+
+BatchRef.wrap(userQueryService::getActiveUser, new ActiveUserQuery(projectId, userId));
 ```
 
 ---

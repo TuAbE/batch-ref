@@ -1,5 +1,8 @@
 package io.github.batchref;
 
+import io.github.batchref.function.QuadFunction;
+import io.github.batchref.function.TriFunction;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -43,6 +46,27 @@ public final class BatchRef<T> {
     public static <A, B, T> BatchRef<T> wrap(BiFunction<A, B, T> queryMethod, A firstArg, B secondArg) {
         Objects.requireNonNull(queryMethod, "queryMethod must not be null");
         return wrap(() -> queryMethod.apply(firstArg, secondArg));
+    }
+
+    public static <A, B, C, T> BatchRef<T> wrap(
+            TriFunction<A, B, C, T> queryMethod,
+            A firstArg,
+            B secondArg,
+            C thirdArg
+    ) {
+        Objects.requireNonNull(queryMethod, "queryMethod must not be null");
+        return wrap(() -> queryMethod.apply(firstArg, secondArg, thirdArg));
+    }
+
+    public static <A, B, C, D, T> BatchRef<T> wrap(
+            QuadFunction<A, B, C, D, T> queryMethod,
+            A firstArg,
+            B secondArg,
+            C thirdArg,
+            D fourthArg
+    ) {
+        Objects.requireNonNull(queryMethod, "queryMethod must not be null");
+        return wrap(() -> queryMethod.apply(firstArg, secondArg, thirdArg, fourthArg));
     }
 
     static <T> BatchRef<T> deferred(String loaderName, Object key) {

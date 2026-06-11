@@ -55,7 +55,7 @@ public class BatchQueryMethodAspect {
     ) {
         Object[] capturedArgs = args == null ? new Object[0] : Arrays.copyOf(args, args.length);
         Object key = toKey(capturedArgs);
-        Method batchMethod = findBatchMethod(targetClass, annotation.batchMethod());
+        Method batchMethod = findBatchMethod(targetClass, method, annotation.batchMethod());
         String loaderName = loaderName(targetClass, method);
 
         return BatchQuery.<Object>of(
@@ -99,16 +99,12 @@ public class BatchQueryMethodAspect {
         return Collections.unmodifiableList(new ArrayList<>(Arrays.asList(args)));
     }
 
-    private Method findBatchMethod(Class<?> targetClass, String batchMethodName) {
-        Objects.requireNonNull(batchMethodName, "batchMethodName must not be null");
-        if (batchMethodName.isBlank()) {
-            throw new BatchRefException("@BatchQueryMethod.batchMethod must not be blank.");
-        }
-
+    private Method findBatchMethod(Class<?> targetClass, Method queryMethod, String configuredBatchMethodName) {
+        List<String> batchMethodNames = batchMethodNames(queryMethod, configuredBatchMethodName);
         Class<?> currentClass = targetClass;
         while (currentClass != null && currentClass != Object.class) {
             for (Method method : currentClass.getDeclaredMethods()) {
-                if (isBatchMethod(method, batchMethodName)) {
+                if (isBatchMethod(method, batchMethodNames)) {
                     method.setAccessible(true);
                     return method;
                 }
@@ -117,13 +113,46 @@ public class BatchQueryMethodAspect {
         }
 
         throw new BatchRefException(
-                "Cannot find batch method " + batchMethodName
+                "Cannot find batch method. Tried " + batchMethodNames
                         + "(Collection<...>) returning Map on " + targetClass.getName()
         );
     }
 
-    private boolean isBatchMethod(Method method, String batchMethodName) {
-        return method.getName().equals(batchMethodName)
+    private List<String> batchMethodNames(Method queryMethod, String configuredBatchMethodName) {
+        if (configuredBatchMethodName != null && !configuredBatchMethodName.isBlank()) {
+            return List.of(configuredBatchMethodName);
+        }
+
+        String queryMethodName = queryMethod.getName();
+        List<String> names = new ArrayList<>();
+        int byIndex = queryMethodName.indexOf("By");
+        if (byIndex > 0) {
+            String prefix = queryMethodName.substring(0, byIndex);
+            String suffix = queryMethodName.substring(byIndex + 2);
+            names.add(prefix + "MapBy" + pluralizeLastToken(suffix));
+        }
+        names.add(queryMethodName + "Map");
+        names.add(queryMethodName + "Batch");
+        names.add("batch" + capitalize(queryMethodName));
+        return names;
+    }
+
+    private String pluralizeLastToken(String value) {
+        if (value.endsWith("Id")) {
+            return value + "s";
+        }
+        return value + "List";
+    }
+
+    private String capitalize(String value) {
+        if (value.isEmpty()) {
+            return value;
+        }
+        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
+    }
+
+    private boolean isBatchMethod(Method method, List<String> batchMethodNames) {
+        return batchMethodNames.contains(method.getName())
                 && method.getParameterCount() == 1
                 && Collection.class.isAssignableFrom(method.getParameterTypes()[0])
                 && Map.class.isAssignableFrom(method.getReturnType());

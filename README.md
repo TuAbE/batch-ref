@@ -65,10 +65,10 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 
 ## QueryService
 
-QueryService 只保留单查方法。批量方法通过注解绑定，loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
+QueryService 只保留单查方法。常规命名下 `@BatchQueryMethod` 不需要填批量方法名，框架会根据单查方法名自动查找批量方法：`getXxxByYyyId` 对应 `getXxxMapByYyyIds`。loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
 
 ```java
-@BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")
+@BatchQueryMethod
 public Relation getActiveRelationByWorkerProjectId(Long workerProjectId) {
     return relationMapper.selectActiveByWorkerProjectId(workerProjectId);
 }
@@ -78,6 +78,25 @@ private Map<Long, Relation> getActiveRelationMapByWorkerProjectIds(Collection<Lo
             .stream()
             .collect(Collectors.toMap(Relation::getWorkerProjectId, Function.identity()));
 }
+```
+
+多参数查询可以继续使用强类型方法引用：
+
+```java
+BatchRef.wrap(
+        projectGcUserQueryService::getActiveUserByWorkerProjectIdAndUserId,
+        project.getProjectId(),
+        param.getUserId()
+);
+```
+
+如果希望在 key 上保留参数名，推荐把多个参数收成一个 record：
+
+```java
+record ActiveUserQuery(Long workerProjectId, Long userId) {
+}
+
+BatchRef.wrap(projectGcUserQueryService::getActiveUser, new ActiveUserQuery(project.getProjectId(), param.getUserId()));
 ```
 
 MyBatis Plus 示例见 [docs/mybatis-plus.md](docs/mybatis-plus.md)。
