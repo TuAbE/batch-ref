@@ -65,7 +65,7 @@ public List<ProjectVO> getProjectList(ProjectListParam param) {
 
 ## QueryService
 
-QueryService 只保留单查方法。`@BatchQueryMethod.batchMethod` 显式绑定批量方法名，属性上带有 IntelliJ Java 语言注入辅助；loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
+QueryService 只保留单查方法。`@BatchQueryMethod.batchMethod` 显式绑定批量方法名，IDEA 插件提供当前类批量方法补全、跳转、重命名、错误标红和隐式引用识别；starter 内置注解处理器会在编译期校验方法名和批量方法签名，写错会直接终止编译。loaderName 和 key 由框架根据类名、方法签名和入参自动生成；fallback 直接执行这个单查方法。
 
 ```java
 @BatchQueryMethod(batchMethod = "getActiveRelationMapByWorkerProjectIds")

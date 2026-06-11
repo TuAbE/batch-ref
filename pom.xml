@@ -77,6 +77,15 @@
                 <configuration>
                     <release>${java.version}</release>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <release>${java.version}</release>
+                            <proc>none</proc>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
